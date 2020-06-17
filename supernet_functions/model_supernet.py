@@ -4,6 +4,8 @@ from collections import OrderedDict
 from fbnet_building_blocks.fbnet_builder import ConvBNRelu, Flatten
 from supernet_functions.config_for_supernet import CONFIG_SUPERNET
 
+from torch.autograd import Variable
+
 class MixedOperation(nn.Module):
     
     # Arguments:
@@ -19,7 +21,13 @@ class MixedOperation(nn.Module):
         self.thetas = nn.Parameter(torch.Tensor([1.0 / len(ops_names) for i in range(len(ops_names))]))
     
     def forward(self, x, temperature, latency_to_accumulate):
-        soft_mask_variables = nn.functional.gumbel_softmax(self.thetas, temperature)
+        ### original code:
+        # soft_mask_variables = nn.functional.gumbel_softmax(self.thetas, temperature)
+        ### new code:
+        u = Variable((torch.zeros_like(self.thetas)).uniform_())
+        softmax = torch.nn.Softmax(-1)
+        soft_mask_variables = softmax((self.thetas + (-((-(u.log())).log())).cuda()) / temperature)
+        ### see https://github.com/AnnaAraslanova/FBNet/issues/7
         output  = sum(m * op(x) for m, op in zip(soft_mask_variables, self.ops))
         latency = sum(m * lat for m, lat in zip(soft_mask_variables, self.latency))
         latency_to_accumulate = latency_to_accumulate + latency
